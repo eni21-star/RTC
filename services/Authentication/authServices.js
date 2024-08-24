@@ -48,7 +48,7 @@ class authentication{
         id: User.id,
         username: User.username
     }
-    const accesstoken = jwt.sign(payload, process.env.ACCESS_SECRET_KEY, { expiresIn: '15m'})
+    const accesstoken = jwt.sign(payload, process.env.ACCESS_SECRET_KEY, { expiresIn: '1hr'}) //dont forget to change bck to 15 min
     const refreshtoken = jwt.sign(payload, process.env.REFRESH_SECRET_KEY, { expiresIn: '7d'})
 
     return {accesstoken, refreshtoken, status: 200}

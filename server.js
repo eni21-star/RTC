@@ -4,8 +4,11 @@ const app = require('./app.js')
 const server = http.createServer(app)
 const mongoose = require('mongoose')
 const { Server } = require('socket.io');
-const messageModel = require("./model/messages.js");
 const jwtVerify = require("./src/middleware/jwtVerify.js");
+const jwt = require('jsonwebtoken');
+const chatRepo = require("./repositories/Chat/chatRepo.js");
+
+
 
 const env = require('dotenv').config()
 
@@ -34,26 +37,70 @@ const io = new Server(server, {
     }
 });
 
-const chatNamespace = io.of('/chat');
-chatNamespace.use(jwtVerify)
-chatNamespace.on('connection', (socket) => {
- //   console.log('New client connected', socket.id);
+ io.of('/draw').
+ use((socket, next) => {
+    const headers = socket.handshake.headers.authorization;
+   
+    if (!headers) {
+        return next(new Error('Authentication error'));
+    }
+    const token = headers.split(" ")[1]
+   
 
+    jwt.verify(token, process.env.ACCESS_SECRET_KEY, (err, user) => {
+        if (err) {
+            return next(new Error('invalid token'))
+        }
+        socket.user = user
+        next()
+    })
+}).on('connection', (socket) => {
+    const namespace = socket.nsp
+    console.log(`Namespace: ${namespace}`);
+    console.log(socket.user)
 
-    socket.on('join', (data) => {
-        const { room, user_name } = data;
+   
+
+    socket.on('join', async (data) => {
+
+        const { room } = data;
+        let roomExists = await chatRepo.roomExist(room)
+        
+        if (!roomExists) {
+           
+            roomExists = new roomModel({ room: room, user_ids: socket.user.id });
+            await roomExists.save();
+            console.log(`Created new room: ${room}`);
+        }
+        else
+        {
+            let userInRoom = await chatRepo.Userinroom(socket.user.id, room)
+            console.log(userInRoom)
+            if(!userInRoom)
+            {
+            await chatRepo.newroomUser(socket.user.id, room)
+             console.log(`new user added to room ${room}`)
+            }
+        }
+
         socket.join(room)
-        console.log(`new user in room ${user_name}`)
-        socket.to(room).emit('message',(` user ${user_name} has joined the chat`))
-
-    });
-
-    socket.on('message', (data)=>{
-        const { room, user_name, message} = data;
-      socket.to(room).emit('message',(`${user_name}: ${ message }`))
+        io.of('/draw').to(room).emit('message', `${socket.user.username}: has joined the chat`)
+    })
+    socket.on('message', async (data)=>{
+        
+        const { room, message } = data
+        let userInRoom = await chatRepo.Userinroom(socket.user.id, room)
+        
+        if (!userInRoom) {
+           
+            socket.emit('error', 'You are not a member of this room, please join first');
+            return;
+        }
+        io.of('/draw').to(room).emit('message', `${socket.user.username} : ${message}`)
+      
     })
 
-    // Handle client disconnection
+   
     socket.on('disconnect', () => {
         console.log('Client disconnected', socket.id);
     });
